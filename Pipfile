@@ -1,0 +1,24 @@
+[[source]]
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[dev-packages]
+
+[requires]
+python_version = "3.8"
+
+[packages]
+alembic = "*"
+psycopg2-binary = "*"
+sqlmodel = "*"
+sqlalchemy = "==1.4.35"
+boto3 = "*"
+fastapi = {extras = [ "all",]}
+fastapi-csrf-protect = {editable = true, git = "https://github.com/CalvinTai0402/fastapi-csrf-protect.git"}
+mangum = "*"
+gunicorn = "*"
+supertokens-python = "==0.11.0"
+black = "*"
+isort = "*"
+nest-asyncio = "*"

@@ -1,0 +1,4 @@
+pipenv lock -r > requirements.txt
+aws sts get-caller-identity
+This is where you can get a psycopg2 binary that is built
+from source: https://gitlab.com/psyhomb/aws-psycopg2#prebuilt-modules

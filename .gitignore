@@ -1,0 +1,6 @@
+.env
+.vercel
+__pycache__
+deploy.sh
+.vscode
+.dockerignore

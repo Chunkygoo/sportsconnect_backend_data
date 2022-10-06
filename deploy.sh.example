@@ -1,0 +1,21 @@
+#!/bin/sh
+
+# variables
+aws_region="us-east-1"
+aws_account_id="you account id" # get it from aws sts get-caller-identity
+aws_ecr_name="your ecr repo name"
+
+# pre-build (might need to manually authenticate in the command line) aws ecr get-login-password --region us-east-1 | sudo docker login -u AWS --password-stdin ["you account id"].dkr.ecr.us-east-1.amazonaws.com
+echo "authenticating the docker cli to use the ECR registry..."
+aws ecr get-login-password --region $aws_region | docker login -u AWS --password-stdin $aws_account_id.dkr.ecr.$aws_region.amazonaws.com
+
+# build use --no-cache to force rebuild
+echo "building image..."
+# sudo docker build -f ./Dockerfile --platform=linux/amd64 -t $aws_account_id.dkr.ecr.$aws_region.amazonaws.com/$aws_ecr_name:dev ./
+sudo docker build --no-cache -f ./Dockerfile --platform=linux/amd64 -t $aws_account_id.dkr.ecr.$aws_region.amazonaws.com/$aws_ecr_name:dev ./
+
+# post-build
+echo "pushing image to AWS ECR..."
+sudo docker push $aws_account_id.dkr.ecr.$aws_region.amazonaws.com/$aws_ecr_name:dev
+
+echo "done!"
