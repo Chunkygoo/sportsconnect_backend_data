@@ -1,3 +1,4 @@
+import nest_asyncio
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -15,22 +16,45 @@ from supertokens_python.recipe import (
     session,
     thirdpartyemailpassword,
 )
+from supertokens_python.recipe.thirdpartyemailpassword import Google
 
-# from .admin.routers import universities as admin_universities
-# from .admin.routers import user as admin_user
+from .admin.routers import universities as admin_universities
+from .admin.routers import user as admin_user
 from .config import settings
 from .routers import auth, education, email, experience, universities, user
-import nest_asyncio
-
-from supertokens_python.recipe.thirdpartyemailpassword import Google
 
 if settings.environment == "PROD":
     app = FastAPI(openapi_url=None, redoc_url=None)
     nest_asyncio.apply()  # lambda supertokens_python fix
     mode = "wsgi"
+    recipe_list = [
+        session.init(
+            cookie_secure=settings.cookie_secure,
+            cookie_same_site=settings.cookie_same_site,
+        ),
+    ]
 else:
     app = FastAPI()
     mode = "asgi"
+    recipe_list = [
+        session.init(
+            cookie_secure=settings.cookie_secure,
+            cookie_domain=settings.cookie_domain,
+            cookie_same_site=settings.cookie_same_site,
+        ),
+    ]
+
+recipe_list += [
+    emailverification.init(mode=settings.email_verification),
+    thirdpartyemailpassword.init(
+        providers=[
+            Google(
+                client_id=settings.google_client_id,
+                client_secret=settings.google_client_secret,
+            ),
+        ],
+    ),
+]
 
 init(
     app_info=InputAppInfo(
@@ -47,23 +71,7 @@ init(
         api_key=settings.api_key,
     ),
     framework="fastapi",
-    recipe_list=[
-        session.init(
-            cookie_secure=settings.cookie_secure,
-            cookie_domain=settings.cookie_domain,
-            cookie_same_site=settings.cookie_same_site,
-        ),
-        # emailpassword.init(),
-        emailverification.init(mode=settings.email_verification),
-        thirdpartyemailpassword.init(
-            providers=[
-                Google(
-                    client_id=settings.google_client_id,
-                    client_secret=settings.google_client_secret,
-                ),
-            ],
-        ),
-    ],
+    recipe_list=recipe_list,
     mode=mode,
 )
 
@@ -71,8 +79,8 @@ init(
 @app.exception_handler(CsrfProtectError)
 def csrf_protect_exception_handler(request: Request, exc: CsrfProtectError):
     return JSONResponse(
-        status_code=400, content={"detail": exc.message}
-    )  # use 400 and not exc.status_code because supertokens_python sends refresh request if status code is 401
+        status_code=403, content={"detail": exc.message}
+    )  # use 403 and not exc.status_code because supertokens_python sends refresh request if status code is 401
 
 
 app.add_middleware(get_middleware())
@@ -91,8 +99,8 @@ app.include_router(education.router)
 app.include_router(universities.router)
 
 # admin routes
-# app.include_router(admin_user.router)
-# app.include_router(admin_universities.router)
+app.include_router(admin_user.router)
+app.include_router(admin_universities.router)
 
 app.add_middleware(
     CORSMiddleware,

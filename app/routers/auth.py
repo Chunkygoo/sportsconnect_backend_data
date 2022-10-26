@@ -28,7 +28,7 @@ def set_csrf_cookie_and_get_csrf_token(
     "/postsignup", status_code=status.HTTP_201_CREATED, response_model=schemas.SignUpRes
 )
 async def create_user(
-    user: schemas.UserCreate,
+    user: schemas.UserPostSignUp,
     db: Session = Depends(get_db),
 ):
     new_user = models.User(**user.dict())

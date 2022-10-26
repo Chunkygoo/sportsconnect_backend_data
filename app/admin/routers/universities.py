@@ -2,8 +2,9 @@ from typing import List, Union
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi_csrf_protect import CsrfProtect
-from fastapi_jwt_auth import AuthJWT
 from sqlmodel import Session, or_, select
+from supertokens_python.recipe.session import SessionContainer
+from supertokens_python.recipe.session.framework.fastapi import verify_session
 
 from app import models, schemas
 from app.database import get_db
@@ -44,12 +45,8 @@ def get_universities(
     order: str = "id.asc",
     q: str = "",
     db: Session = Depends(get_db),
-    Authorize: AuthJWT = Depends(),
-    csrf_protect: CsrfProtect = Depends(),
+    session: SessionContainer = Depends(verify_session()),
 ):
-    csrf_token = csrf_protect.get_csrf_from_headers(request.headers)
-    csrf_protect.validate_csrf(csrf_token, request)
-    Authorize.jwt_required()
     # Get one university
     if id != "-1":
         return get_university(int(id.split(".")[1]), db)
@@ -110,12 +107,11 @@ def create_university(
     request: Request,
     university: schemas.UniversityReq,
     db: Session = Depends(get_db),
-    Authorize: AuthJWT = Depends(),
+    session: SessionContainer = Depends(verify_session()),
     csrf_protect: CsrfProtect = Depends(),
 ):
     csrf_token = csrf_protect.get_csrf_from_headers(request.headers)
     csrf_protect.validate_csrf(csrf_token, request)
-    Authorize.jwt_required()
     new_university = models.University(**university.dict())
     db.add(new_university)
     db.commit()
@@ -130,12 +126,11 @@ def update_university(
     updated_university: schemas.UniversityReq,
     id: str = "-1",
     db: Session = Depends(get_db),
-    Authorize: AuthJWT = Depends(),
+    session: SessionContainer = Depends(verify_session()),
     csrf_protect: CsrfProtect = Depends(),
 ):
     csrf_token = csrf_protect.get_csrf_from_headers(request.headers)
     csrf_protect.validate_csrf(csrf_token, request)
-    Authorize.jwt_required()
     if id != "-1":
         university_id = int(id.split(".")[1])
     university = db.exec(
@@ -161,12 +156,11 @@ def delete_university(
     request: Request,
     id: str = "-1",
     db: Session = Depends(get_db),
-    Authorize: AuthJWT = Depends(),
+    session: SessionContainer = Depends(verify_session()),
     csrf_protect: CsrfProtect = Depends(),
 ):
     csrf_token = csrf_protect.get_csrf_from_headers(request.headers)
     csrf_protect.validate_csrf(csrf_token, request)
-    Authorize.jwt_required()
     if id != "-1" and "eq" in id:
         university_ids = [int(id.split(".")[1])]
     elif "in" in id:  # delete many

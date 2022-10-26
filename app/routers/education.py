@@ -1,6 +1,7 @@
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import (APIRouter, Depends, HTTPException, Request, Response,
+                     status)
 from fastapi_csrf_protect import CsrfProtect
 from sqlmodel import Session, select
 from supertokens_python.recipe.session import SessionContainer

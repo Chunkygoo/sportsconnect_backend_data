@@ -10,13 +10,13 @@ from app.models import University
 
 # Auth
 class UserCreate(BaseModel):
+    email: str
+    password: str
+
+
+class UserPostSignUp(BaseModel):
     id: str
     email: str
-
-
-class UserLogin(BaseModel):
-    username: str
-    password: str
 
 
 # Base
@@ -163,7 +163,7 @@ class UserMe(UserRes):
 
 
 class UserAdmin(UserBase):
-    id: Optional[int]
+    id: str
     username: Optional[str] = ""
     email: Optional[str] = ""
     name: Optional[str] = ""

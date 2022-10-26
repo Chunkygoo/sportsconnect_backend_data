@@ -2,10 +2,20 @@ from typing import List, Union
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi_csrf_protect import CsrfProtect
-from fastapi_jwt_auth import AuthJWT
 from sqlmodel import Session, or_, select
+from supertokens_python.recipe.emailpassword.interfaces import (
+    SignUpEmailAlreadyExistsError,
+)
+from supertokens_python.recipe.session import SessionContainer
+from supertokens_python.recipe.session.framework.fastapi import verify_session
+from supertokens_python.recipe.thirdpartyemailpassword.syncio import (
+    emailpassword_sign_up,
+)
+from supertokens_python.syncio import (
+    delete_user,
+)  # not using async because aws lambda cannot handle
 
-from app import models, schemas, utils
+from app import models, schemas
 from app.database import get_db
 
 from ..auth_check import auth_check
@@ -19,7 +29,7 @@ def get_csrf_config():
 router = APIRouter(prefix="/admin/users", tags=["(Admin) Users"])
 
 # helper needed due to how the postgresql dataprovider works for react-admin
-def get_user(user_id: int, db: Session):
+def get_user(user_id: str, db: Session):
     statement = select(models.User).where(models.User.id == user_id)
     results = db.exec(statement)
     user = results.first()
@@ -41,18 +51,13 @@ def get_users(
     order: str = "id.asc",
     q: str = "",
     db: Session = Depends(get_db),
-    Authorize: AuthJWT = Depends(),
-    csrf_protect: CsrfProtect = Depends(),
+    session: SessionContainer = Depends(verify_session()),
 ):
-    csrf_token = csrf_protect.get_csrf_from_headers(request.headers)
-    csrf_protect.validate_csrf(csrf_token, request)
-    Authorize.jwt_required()
     # Get one user
     if id != "-1":
-        return get_user(int(id.split(".")[1]), db)
+        return get_user(id.split(".")[1], db)
     order_direction_map = {
         "id": [models.User.id, models.User.id.desc()],
-        "username": [models.User.id, models.User.id.desc()],
         "email": [models.User.email, models.User.email.desc()],
         "name": [models.User.name, models.User.name.desc()],
         "wechatId": [models.User.wechatId, models.User.wechatId.desc()],
@@ -77,7 +82,7 @@ def get_users(
     if q != "":
         statement = statement.where(
             or_(
-                models.User.username.contains(q),
+                models.User.id.contains(q),
                 models.User.email.contains(q),
                 models.User.name.contains(q),
                 models.User.wechatId.contains(q),
@@ -112,26 +117,30 @@ def create_user(
     request: Request,
     user: schemas.UserCreate,
     db: Session = Depends(get_db),
-    Authorize: AuthJWT = Depends(),
+    session: SessionContainer = Depends(verify_session()),
     csrf_protect: CsrfProtect = Depends(),
 ):
     csrf_token = csrf_protect.get_csrf_from_headers(request.headers)
     csrf_protect.validate_csrf(csrf_token, request)
-    Authorize.jwt_required()
-    hashed_password = utils.hash(user.password)
-    user.password = hashed_password
-    new_user = models.User(**user.dict())
-    users = db.query(models.User).all()
-    for user in users:
-        if user.username == new_user.username:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Username is used by another user",
-            )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    return new_user
+    data = emailpassword_sign_up(
+        user.email, user.password
+    )  # does not call override_thirdpartyemailpassword_apis. override_thirdpartyemailpassword_apis calls emailpassword_sign_up and another session function.
+    # Because we overwrote the api's instance of emailpassword_sign_up not the function emailpassword_sign_up itself, we have to create a user below. Alternatively,
+    # we could overwrite the emailpassword_sign_up function itself so that it works on both cases (may not want this depending on the situation)
+    if type(data) is SignUpEmailAlreadyExistsError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Email is used by another user",
+        )
+    else:
+        new_user_data = data.user
+        new_user = models.User(
+            **{"id": new_user_data.user_id, "email": new_user_data.email}
+        )
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        return new_user
 
 
 @router.put("", response_model=schemas.UserAdmin)
@@ -141,14 +150,13 @@ def update_user(
     updated_user: schemas.UserAdminReq,
     id: str = "-1",
     db: Session = Depends(get_db),
-    Authorize: AuthJWT = Depends(),
+    session: SessionContainer = Depends(verify_session()),
     csrf_protect: CsrfProtect = Depends(),
 ):
     csrf_token = csrf_protect.get_csrf_from_headers(request.headers)
     csrf_protect.validate_csrf(csrf_token, request)
-    Authorize.jwt_required()
     if id != "-1":
-        user_id = int(id.split(".")[1])
+        user_id = id.split(".")[1]
     user = db.exec(select(models.User).where(models.User.id == user_id)).first()
     if user == None:
         raise HTTPException(
@@ -165,21 +173,20 @@ def update_user(
 
 @router.delete("", status_code=status.HTTP_204_NO_CONTENT)
 @auth_check(roles=["admin"])
-def delete_user(
+def delete_user_(
     request: Request,
     id: str = "-1",
     db: Session = Depends(get_db),
-    Authorize: AuthJWT = Depends(),
+    session: SessionContainer = Depends(verify_session()),
     csrf_protect: CsrfProtect = Depends(),
 ):
     csrf_token = csrf_protect.get_csrf_from_headers(request.headers)
     csrf_protect.validate_csrf(csrf_token, request)
-    Authorize.jwt_required()
     if id != "-1" and "eq" in id:
-        user_ids = [int(id.split(".")[1])]
+        user_ids = [id.split(".")[1]]
     elif "in" in id:  # delete many
         start = id.index("(") + 1
-        user_ids = [int(id) for id in id[start:-1].split(",")]
+        user_ids = [id for id in id[start:-1].split(",")]
     for user_id in user_ids:
         user = db.exec(select(models.User).where(models.User.id == user_id)).first()
         if user == None:
@@ -189,4 +196,5 @@ def delete_user(
             )
         db.delete(user)
         db.commit()
+        delete_user(user_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
